@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/plasticfactorywastaken/metal-archives-catalog",
+  "application": "https://plasticfactorywastaken.github.io/metal-archives-catalog/",
+  "deployed_source_commit": "b14315366b03e523973c96bf6c6f39088d5ebab3",
+  "publication_run_id": 45937987392,
+  "import_run_id": 45937168956,
+  "snapshot_release": "catalog-state-20261127T035922Z-45937168956-1",
+  "historical_snapshot_published_at": "2024-11-09T13:34:11.417Z",
+  "historical_files_complete": true,
+  "entity_counts": {"band": 182542, "label": 13538},
+  "invalid_input_rows_skipped": 529,
+  "direct_verification_ratio": 0,
+  "current_global_coverage": null,
+  "weekly_sync_active": false,
+  "unattended_sheets_connected": false,
+  "site_bytes_at_import": 801898512
+}

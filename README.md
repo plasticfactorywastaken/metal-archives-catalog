@@ -2,7 +2,9 @@
 
 A deterministic Python worker, SQLite catalog, partitioned JSON/CSV exports, Google Sheets control panel, and static GitHub Pages search application. Routine jobs use no LLM and require no running personal computer.
 
-**Initial state:** implementation and synthetic-fixture validation are available. The live API probe failed and the website verification returned HTTP 403. A free public historical snapshot is available for a cloud bootstrap; its pinned November 2024 publication is not a current catalog. No real catalog has yet been imported or published. Coverage and confidence remain unknown until a run. See [RECONCILIATION.md](docs/RECONCILIATION.md) for the exact validation and deployment state.
+**Live application:** [Open the catalog](https://plasticfactorywastaken.github.io/metal-archives-catalog/). The historical bootstrap is complete: **182,542 unique bands and 13,538 unique labels** are searchable. These are unverified records from a snapshot published November 9, 2024. Global current coverage is unknown; direct verification is 0%. The live API and Metal-Archives access remain unavailable, weekly synchronization is inactive, and unattended Google Sheets reporting still needs its worker credential. See [RECONCILIATION.md](docs/RECONCILIATION.md) for validation and limitations.
+
+To retry publication after a hosting failure, run **Publish saved catalog**. It restores the existing checksummed snapshot and rebuilds the site without importing or querying catalog sources. Publication waits for the uploaded Pages artifact to become visible before deployment.
 
 ## First usable catalog
 
