@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+node_modules/
+state/
+site/data/
+site/snapshots/
+*.xlsx
+.env
+*credentials*.json
+service-account*.json
+.DS_Store

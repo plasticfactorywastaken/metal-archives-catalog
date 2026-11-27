@@ -1,0 +1,81 @@
+name: Weekly catalog synchronization
+on:
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [test, batch, full]
+        default: test
+      limit:
+        description: Maximum detail jobs in this run
+        default: '250'
+      allow_initial_import:
+        description: Allow an empty database only when no state release exists
+        type: boolean
+        default: false
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+jobs:
+  synchronize:
+    if: github.event.repository.private == false && (github.event_name == 'workflow_dispatch' || vars.SYNC_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SHEET_ID: ${{ vars.GOOGLE_SHEET_ID }}
+      MODE: ${{ inputs.mode || 'batch' }}
+      RECORD_LIMIT: ${{ inputs.limit || '250' }}
+      INITIAL: ${{ inputs.allow_initial_import || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deterministic worker
+        run: python -m pip install '.[sheets]'
+      - name: Verify code before touching persisted state
+        run: |
+          python -m unittest discover -s tests -v
+          node --test tests/frontend.test.mjs
+      - name: Restore last published state
+        id: restore
+        shell: bash
+        run: |
+          if [ "$INITIAL" = "true" ]; then
+            python scripts/cloud_state.py restore --allow-empty
+          else
+            python scripts/cloud_state.py restore
+          fi
+      - name: Synchronize within source and time budgets
+        id: sync
+        run: python -m catalog_mirror sync --mode "$MODE" --limit "$RECORD_LIMIT" --seconds 7200
+      - name: Persist checkpoints even if export failed
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          if [ -f state/catalog.sqlite ]; then
+            python scripts/cloud_state.py publish
+          fi
+      - name: Verify Pages size budget
+        if: steps.sync.outcome == 'success'
+        run: python scripts/check_site_size.py
+      - uses: actions/configure-pages@v5
+        if: steps.sync.outcome == 'success'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.sync.outcome == 'success'
+        with:
+          path: site
+          retention-days: 1
+      - uses: actions/deploy-pages@v4
+        id: deployment
+        if: steps.sync.outcome == 'success'

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metal-archives-catalog"
+version = "0.1.0"
+description = "Deterministic public catalog mirror with resumable imports"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+sheets = ["google-auth>=2.36,<3", "requests>=2.32,<3"]
+
+[project.scripts]
+catalog-mirror = "catalog_mirror.cli:main"
+
+[tool.setuptools.package-data]
+catalog_mirror = ["schema.sql"]
+
+[tool.setuptools.packages.find]
+include = ["catalog_mirror*"]

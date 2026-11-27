@@ -1,0 +1,24 @@
+{
+  "checked_at": "2026-11-27T02:43:27.551053+00:00",
+  "requests": [
+    {
+      "url": "https://metal-api.dev/bands/1",
+      "status": "unavailable",
+      "error_type": "URLError",
+      "elapsed_seconds": 0.12
+    },
+    {
+      "url": "https://www.metal-archives.com/robots.txt",
+      "status": 200,
+      "content_type": "text/plain; charset=utf-8",
+      "bytes": 3259,
+      "elapsed_seconds": 0.49
+    },
+    {
+      "url": "https://www.metal-archives.com/bands/1",
+      "status": 403,
+      "error": "HTTP 403",
+      "elapsed_seconds": 0.09
+    }
+  ]
+}

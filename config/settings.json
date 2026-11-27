@@ -1,0 +1,22 @@
+{
+  "database": "state/catalog.sqlite",
+  "export_directory": "site/data",
+  "cache_directory": "state/cache",
+  "api_base_url": "https://metal-api.dev",
+  "website_base_url": "https://www.metal-archives.com",
+  "user_agent": "CatalogMirror/0.1 (public metadata; deterministic worker; contact configured by repository owner)",
+  "request_interval_seconds": 8,
+  "request_timeout_seconds": 25,
+  "max_retries": 2,
+  "max_records": 250,
+  "max_seconds": 7200,
+  "discovery_page_size": 25,
+  "sample_size": 10,
+  "recheck_days": 90,
+  "sheet_row_limit": 1000,
+  "sheet_control_limit": 10000,
+  "api_search_terms": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"],
+  "seed_records": [],
+  "sheet_id": "1tmIM8FK0fBjg9TR2yQHRsZkciEs7nE8L8qab9T4OUGw",
+  "minimum_absence_runs": 3
+}
