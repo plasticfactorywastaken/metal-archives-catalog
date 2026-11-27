@@ -83,6 +83,7 @@ function renderRows(records) {
     const releaseTitle = record.release_title || record.facet_release_title;
     if (bandName && record.entity_type !== 'band') name.append(textElement('span', bandName, 'record-meta'));
     else if (record.band_id || record.facet_band_id) name.append(textElement('span', `Band ID ${record.band_id || record.facet_band_id}`, 'record-meta'));
+    if (record.band_link_method === 'unique_exact_name') name.append(textElement('span', 'Band link inferred from unique exact name', 'record-meta'));
     if (releaseTitle && record.entity_type === 'song') name.append(textElement('span', releaseTitle, 'record-meta'));
     const genre = document.createElement('td');
     const ordered = genres(record);

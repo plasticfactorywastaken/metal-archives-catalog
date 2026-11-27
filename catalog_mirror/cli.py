@@ -15,6 +15,7 @@ from .transport import Transport
 from .sync import SyncEngine
 from .snapshot import SnapshotImporter
 from .albums import AlbumSnapshotImporter
+from .album_enrichment import AlbumEnricher
 from .sheets import SheetsClient, apply_controls, controls_settings, report_tables, HEADERS, TAB_ORDER
 
 
@@ -40,6 +41,12 @@ def main(argv=None):
     albums.add_argument("--limit", type=int, help="Maximum projected source rows inspected, including duplicates")
     albums.add_argument("--seconds", type=int, default=7200)
     albums.add_argument("--skip-sheets", action="store_true")
+    enrichment = sub.add_parser("enrich-albums", help="Add conservative band links and historical album year/type")
+    enrichment.add_argument("--mode", choices=("test","batch","full"), default="full")
+    enrichment.add_argument("--limit", type=int)
+    enrichment.add_argument("--seconds", type=int, default=1800)
+    enrichment.add_argument("--bands-only", action="store_true")
+    enrichment.add_argument("--skip-sheets", action="store_true")
     sheets_sync = sub.add_parser("sync-sheets", help="Read private controls and refresh reports without requesting catalog sources")
     sheets_sync.add_argument("--skip-sheets", action="store_true")
     export = sub.add_parser("export")
@@ -78,7 +85,7 @@ def main(argv=None):
             manifest = export_catalog(store, args.output or settings["export_directory"])
             print(json.dumps({"status":"exported","records":store.summary()["total_records"]}))
             return 0
-        if args.command not in {"bootstrap-snapshot", "bootstrap-albums", "sync-sheets"}:
+        if args.command not in {"bootstrap-snapshot", "bootstrap-albums", "enrich-albums", "sync-sheets"}:
             transport = Transport(cache_dir=settings.get("cache_directory"),
                 min_interval=settings.get("request_interval_seconds",8), user_agent=settings["user_agent"],
                 timeout=settings.get("request_timeout_seconds",25), max_retries=settings.get("max_retries",2))
@@ -104,6 +111,8 @@ def main(argv=None):
             result = SnapshotImporter(store).run(args.mode,args.limit,args.seconds)
         elif args.command == "bootstrap-albums":
             result = AlbumSnapshotImporter(store).run(args.mode,args.limit,args.seconds)
+        elif args.command == "enrich-albums":
+            result = AlbumEnricher(store).run(args.mode,args.limit,args.seconds,include_discography=not args.bands_only)
         elif args.command == "sync-sheets":
             run_id = store.start_run("sheets_only")
             store.finish_run(run_id, status="success", api_status="not_checked", website_status="not_checked")

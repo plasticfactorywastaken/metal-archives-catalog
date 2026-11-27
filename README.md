@@ -18,6 +18,8 @@ For albums, run **Import albums**, first with mode `test` and limit `25`, then m
 
 JSON, complete CSV and change-history partitions use gzip to stay within free Pages storage. Browser search decompresses and verifies one partition at a time. Downloaded `.csv.gz` files must be decompressed before opening as CSV. The 900 MB publication guard remains active.
 
+**Enrich album filters** adds a band link only when exactly one existing band has the identical name. These links are explicitly marked as inferred. Missing album year/type can be added only from a unique exact band-ID/title match in the pinned Kaggle version-3 discography; ambiguous matches remain unknown. Existing values, verified releases and manual controls are preserved. Inherited genre/country filters retain their band-source provenance.
+
 After the dedicated Google Sheets credential is configured, **Refresh Google Sheets reports** reads manual controls and refreshes reports without contacting catalog sources. Its job fails visibly if Sheets access fails. The weekly job performs the same control/report sync automatically.
 
 Source: [Every Metal Archives Band November 2024, version 3](https://www.kaggle.com/datasets/guimacrlh/every-metal-archives-band-october-2024). The provider labels the dataset Apache 2.0. Image URLs are discarded and no image files are fetched. See [source notes](docs/SOURCES.md) for pinned endpoints and limitations.
