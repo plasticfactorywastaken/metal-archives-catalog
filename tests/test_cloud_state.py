@@ -1,5 +1,7 @@
 import json
 import hashlib
+import contextlib
+import io
 import sqlite3
 import tempfile
 import unittest
@@ -125,6 +127,44 @@ class CloudStateTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 cloud_state.restore(self.restored)
         self.assertFalse(self.restored.exists())
+
+    def test_restore_selects_latest_published_snapshot_across_pages(self):
+        pages = [
+            [
+                {"tag_name": "catalog-state-draft", "draft": True, "published_at": None},
+                {"tag_name": "catalog-state-older", "draft": False, "published_at": "2026-11-25T10:00:00Z"},
+            ],
+            [
+                {"tag_name": "v99-unrelated-release", "draft": False, "published_at": "2026-11-29T10:00:00Z"},
+                {"tag_name": "catalog-state-latest", "draft": False, "published_at": "2026-11-27T10:00:00Z"},
+                {"tag_name": "catalog-state-oldest", "draft": False, "published_at": "2026-11-20T10:00:00Z"},
+            ],
+        ]
+        calls = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            if args[0] == "api":
+                self.assertIn("--paginate", args)
+                self.assertIn("--slurp", args)
+                return json.dumps(pages)
+            self.assertEqual(args[:3], ("release", "download", "catalog-state-latest"))
+            directory = Path(args[args.index("--dir") + 1])
+            if "snapshot-manifest.json" in args:
+                (directory / "snapshot-manifest.json").write_text(json.dumps({"cooldown_asset": {"name": "cooldowns.json"}}))
+            return ""
+
+        custom_cache = self.root / "restored-cache"
+        output = io.StringIO()
+        with patch.object(cloud_state, "gh", side_effect=fake_gh), patch.object(cloud_state, "unpack") as unpack, contextlib.redirect_stdout(output):
+            cloud_state.restore(self.restored, cache_dir=custom_cache)
+            unpack.assert_called_once()
+            download_dir = calls[1][calls[1].index("--dir") + 1]
+            unpack.assert_called_once_with(download_dir, self.restored, custom_cache)
+        self.assertEqual(len(calls), 3)
+        self.assertIn("catalog.sqlite.gz.part*", calls[2])
+        self.assertIn("cooldowns.json", calls[2])
+        self.assertEqual(json.loads(output.getvalue()), {"restore": "verified", "snapshot": "catalog-state-latest"})
 
     def test_failed_upload_never_publishes_draft(self):
         calls = []

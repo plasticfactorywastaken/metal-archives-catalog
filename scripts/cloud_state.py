@@ -171,7 +171,7 @@ def restore(db, allow_empty=False, cache_dir=None):
         if allow_empty:
             print(json.dumps({"restore":"initial_empty_import"})); return
         raise RuntimeError("No published state snapshot. Explicitly enable ALLOW_INITIAL_IMPORT once; refusing silent reset.")
-    latest=max(candidates,key=lambda:r["published_at"])
+    latest=max(candidates,key=lambda release: release["published_at"])
     with tempfile.TemporaryDirectory() as directory:
         gh("release","download",latest["tag_name"],"--dir",directory,"--pattern","snapshot-manifest.json")
         manifest = json.loads((Path(directory) / "snapshot-manifest.json").read_text(encoding="utf-8"))
