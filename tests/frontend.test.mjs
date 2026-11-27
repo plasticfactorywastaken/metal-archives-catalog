@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {matches, genres, needsClassification, isUpcoming, csvCell, csvRow, safeDataURL, historicalSnapshotNotice} from '../site/query.mjs';
+import {gzipSync} from 'node:zlib';
+import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+import {matches, genres, needsClassification, isUpcoming, csvCell, csvRow, safeDataURL, historicalSnapshotNotice, albumSnapshotNotice} from '../site/query.mjs';
+import {readPartition} from '../site/partition.mjs';
 
 const band = {entity_type:'band',entity_id:'100',name:'Test Band',genres_json:['Death Metal','Black Metal','Death Metal'],
   primary_genre:'Death Metal',country:'Finland',location:'Helsinki',status:'Active',formed_in:'1992',
@@ -89,6 +93,54 @@ test('snapshot band filters match a joined label without source fabrication', ()
   assert.equal(matches(record,{label:'44'}),true);
   assert.equal(record.last_checked,null);
   assert.equal(record.verification_status,'pending');
+});
+
+test('album source notice remains distinct from the older band snapshot', async () => {
+  const album = albumSnapshotNotice({provider:'Hugging Face',published_at:'2026-08-24T10:35:27Z',observation_date:null,complete:true,dataset_url:'https://huggingface.co/datasets/fairygaze/music'});
+  assert.match(album.title,/2026-08-24/);
+  assert.match(album.description,/Publication is not the Metal-Archives observation date/);
+  assert.match(album.description,/await direct verification/);
+  assert.match(album.progress,/coverage remains unknown/);
+  assert.equal(album.sourceURL,'https://huggingface.co/datasets/fairygaze/music');
+  assert.equal(albumSnapshotNotice(null),null);
+  const html=await readFile(new URL('../site/index.html',import.meta.url),'utf8');
+  assert.match(html,/<option value="band">Bands<\/option>/);
+  assert.match(html,/<option value="release">Albums \/ releases<\/option>/);
+  assert.doesNotMatch(html,/<option value="song">|name="song"/);
+});
+
+function gzipFixture(records) {
+  const raw=Buffer.from(JSON.stringify(records)+'\n');
+  const zipped=gzipSync(raw);
+  const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+  return {raw,zipped,descriptor:{path:'release/part-0.json.gz',encoding:'gzip',bytes:zipped.length,uncompressed_bytes:raw.length,sha256:sha(zipped),uncompressed_sha256:sha(raw),entity_type:'release',count:records.length}};
+}
+
+test('gzip partitions verify stored bytes and decode with plain JSON compatibility', async () => {
+  const fixture=gzipFixture([release]);
+  assert.deepEqual(await readPartition(new Response(fixture.zipped),fixture.descriptor),[release]);
+  assert.deepEqual(await readPartition(new Response(fixture.raw),{path:'legacy.json'}),[release]);
+});
+
+test('compressed checksum failure is rejected before constructing a decompressor', async () => {
+  const fixture=gzipFixture([release]);
+  const original=globalThis.DecompressionStream;
+  let constructed=false;
+  globalThis.DecompressionStream=class {constructor(){constructed=true;throw new Error('Must not decompress');}};
+  try {
+    await assert.rejects(readPartition(new Response(fixture.zipped),{...fixture.descriptor,sha256:'0'.repeat(64)}),/Compressed partition checksum mismatch/);
+    await assert.rejects(readPartition(new Response(fixture.zipped),{...fixture.descriptor,sha256:undefined}),/checksum is missing/);
+    assert.equal(constructed,false);
+  } finally {globalThis.DecompressionStream=original;}
+});
+
+test('gzip partition size limits and decompressed checksums reject corrupt payloads', async () => {
+  const fixture=gzipFixture([{...release,name:'x'.repeat(10000)}]);
+  await assert.rejects(readPartition(new Response(fixture.zipped),fixture.descriptor,{maxCompressedBytes:20}),/oversized byte count/);
+  await assert.rejects(readPartition(new Response(fixture.zipped),{...fixture.descriptor,uncompressed_bytes:undefined},{maxUncompressedBytes:128}),/exceeds its byte limit/);
+  await assert.rejects(readPartition(new Response(fixture.zipped),{...fixture.descriptor,uncompressed_sha256:'f'.repeat(64)}),/Uncompressed partition checksum mismatch/);
+  const controller=new AbortController();controller.abort();
+  await assert.rejects(readPartition(new Response(fixture.zipped),fixture.descriptor,{signal:controller.signal}),{name:'AbortError'});
 });
 
 test('CSV export escapes quotes, multiline data, and spreadsheet formulas', () => {
@@ -200,5 +252,27 @@ test('a new worker request aborts an older fetch without stale results or false 
     assert.equal(result.requestId,22);
     assert.equal(result.failures,0);
     assert.equal(result.rows[0].entity_id,'new');
+  } finally {globalThis.self=originalSelf;globalThis.fetch=originalFetch;}
+});
+
+test('worker searches gzip and legacy partitions while omitting UI-excluded songs', async () => {
+  const fixture=gzipFixture([release]);
+  const messages=[],requested=[];
+  let handler;
+  const originalSelf=globalThis.self,originalFetch=globalThis.fetch;
+  globalThis.self={addEventListener:(_event,callback)=>{handler=callback;},postMessage:value=>messages.push(value)};
+  globalThis.fetch=async url=>{
+    requested.push(url);
+    return url.endsWith('.gz') ? new Response(fixture.zipped) : new Response(JSON.stringify([band]));
+  };
+  try {
+    await import('../site/worker.js?mixed-gzip');
+    await handler({data:{requestId:31,action:'search',manifest:{partitions:[fixture.descriptor,{path:'band.json',entity_type:'band',count:1},{path:'song.json',entity_type:'song',count:1}]},filters:{},baseURL:'https://example.test/data/',excludedEntityTypes:['song'],pageSize:50}});
+    const result=messages.find(message=>message.kind==='result');
+    assert.equal(result.failures,0);
+    assert.equal(result.total,2);
+    assert.deepEqual(result.rows.map(row=>row.entity_type),['release','band']);
+    assert.equal(requested.length,2);
+    assert.equal(requested.some(url=>url.endsWith('song.json')),false);
   } finally {globalThis.self=originalSelf;globalThis.fetch=originalFetch;}
 });

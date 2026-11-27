@@ -8,7 +8,9 @@ sibling staging directory and replaces the published tree only after success.
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
+import io
 import itertools
 import json
 import os
@@ -39,18 +41,40 @@ def chunks(iterator, size):
         yield batch
 
 
-def write_csv(path: Path, rows: list[dict], fieldnames=None):
+def _payload(path: Path, data: bytes, compressed: bool = False) -> dict:
+    """Write one bounded partition and describe both stored and decoded bytes.
+
+    An empty gzip filename and fixed mtime make repeated exports byte-identical
+    across platforms. Hashes refer to exact file bytes, including CSV's UTF-8 BOM.
+    """
+    if compressed:
+        with path.open("wb") as stream:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=stream, compresslevel=6, mtime=0) as zipped:
+                zipped.write(data)
+    else:
+        path.write_bytes(data)
+    stored = path.read_bytes()
+    return {
+        "encoding": "gzip" if compressed else "identity",
+        "bytes": len(stored),
+        "uncompressed_bytes": len(data),
+        "sha256": hashlib.sha256(stored).hexdigest(),
+        "uncompressed_sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def write_csv(path: Path, rows: list[dict], fieldnames=None, compressed: bool = False):
     fieldnames = fieldnames or sorted({key for row in rows for key in row})
-    with path.open("w", newline="", encoding="utf-8-sig") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows({key: csv_cell(row.get(key)) for key in fieldnames} for row in rows)
+    stream = io.StringIO(newline="")
+    writer = csv.DictWriter(stream, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows({key: csv_cell(row.get(key)) for key in fieldnames} for row in rows)
+    return _payload(path, stream.getvalue().encode("utf-8-sig"), compressed)
 
 
 def _json(path, value):
     data = (canonical_json(value) + "\n").encode("utf-8")
-    path.write_bytes(data)
-    return hashlib.sha256(data).hexdigest()
+    return _payload(path, data)["sha256"]
 
 
 def _cleanup_generated(path: Path, expected_parent: Path, prefix: str):
@@ -128,7 +152,8 @@ def with_search_facets(record: dict, lookup) -> dict:
 
 
 def export_catalog(store: Store, output_dir: str | Path, partition_size: int = 1000,
-                   include_sqlite: bool = False, max_bytes: int = 900_000_000) -> dict:
+                   include_sqlite: bool = False, max_bytes: int = 900_000_000,
+                   compressed: bool = True) -> dict:
     if not 1 <= partition_size <= 1000:
         raise ValueError("partition_size must be between 1 and 1000")
     target = Path(output_dir).resolve()
@@ -146,7 +171,8 @@ def export_catalog(store: Store, output_dir: str | Path, partition_size: int = 1
             raise ValueError(f"Export exceeds the configured free-hosting budget ({max_bytes} bytes); the previous export is retained")
 
     manifest = {
-        "version": 1,
+        "version": 2 if compressed else 1,
+        "export_compression": "gzip" if compressed else "identity",
         "generated_at": utcnow(),
         "total_records": 0,
         "partitions": [],
@@ -158,6 +184,10 @@ def export_catalog(store: Store, output_dir: str | Path, partition_size: int = 1
         "downloads": {},
         "genre_facets": "facet_* fields may inherit a release or single parent band's metadata. genres_raw, genres_json, primary_genre and content_hash remain the entity's own source values. genre_origin and genre_source_url identify inheritance.",
         "csv_formula_escaping": "Leading spreadsheet formula characters are prefixed with an apostrophe; JSON and SQLite preserve exact values.",
+        "download_formats": {
+            "entity_csv": "Complete entity CSV partitions (.csv.gz); decompress gzip before opening in a spreadsheet." if compressed else "Complete entity CSV partitions (.csv).",
+            "history_csv": "Complete per-field change history CSV partitions (.csv.gz); no historical rows are omitted." if compressed else "Complete per-field change history CSV partitions (.csv); no historical rows are omitted.",
+        },
     }
     # Snapshot origin belongs to persisted catalog state, not the latest run.
     # A subsequent live-sync attempt must not erase this historical disclosure.
@@ -167,6 +197,12 @@ def export_catalog(store: Store, output_dir: str | Path, partition_size: int = 1
         manifest["historical_snapshot"] = {field: historical.get(field) for field in fields}
         manifest["historical_snapshot"]["publication_is_observation_date"] = False
         manifest["historical_snapshot"]["complete_means"] = "Snapshot files imported; not complete or current Metal-Archives coverage."
+    albums = store.get_checkpoint("album_snapshot")
+    if isinstance(albums, dict) and albums:
+        fields = ("provider", "dataset", "dataset_url", "revision", "published_at", "snapshot_label", "observation_date", "license", "complete", "unverified", "live")
+        manifest["album_snapshot"] = {field: albums.get(field) for field in fields}
+        manifest["album_snapshot"]["publication_is_observation_date"] = False
+        manifest["album_snapshot"]["complete_means"] = "Album source files processed; not complete or current Metal-Archives coverage."
     try:
         # A bounded lookup cache avoids reloading the same parents for nearby
         # tracks without retaining the complete catalog during export.
@@ -176,17 +212,18 @@ def export_catalog(store: Store, output_dir: str | Path, partition_size: int = 1
             faceted = (with_search_facets(record, lookup) for record in store.iter_entities(entity_type))
             for index, records in enumerate(chunks(faceted, partition_size)):
                 directory.mkdir(exist_ok=True)
-                json_path = directory / f"part-{index:06d}.json"
-                csv_path = directory / f"part-{index:06d}.csv"
-                digest = _json(json_path, records)
-                write_csv(csv_path, records)
+                suffix = ".gz" if compressed else ""
+                json_path = directory / f"part-{index:06d}.json{suffix}"
+                csv_path = directory / f"part-{index:06d}.csv{suffix}"
+                json_description = _payload(json_path, (canonical_json(records) + "\n").encode("utf-8"), compressed)
+                csv_description = write_csv(csv_path, records, compressed=compressed)
                 manifest["partitions"].append({
                     "path": json_path.relative_to(staging).as_posix(),
                     "csv_path": csv_path.relative_to(staging).as_posix(),
                     "entity_type": entity_type,
                     "count": len(records),
-                    "bytes": json_path.stat().st_size,
-                    "sha256": digest,
+                    **json_description,
+                    **{"csv_" + key: value for key, value in csv_description.items()},
                     "first_id": records[0]["entity_id"],
                     "last_id": records[-1]["entity_id"],
                 })
@@ -195,13 +232,15 @@ def export_catalog(store: Store, output_dir: str | Path, partition_size: int = 1
         history = staging / "history"
         for index, changes in enumerate(chunks(store.iter_changes(), partition_size)):
             history.mkdir(exist_ok=True)
-            csv_path = history / f"changes-{index:06d}.csv"
-            write_csv(csv_path, changes)
-            manifest["change_partitions"].append({"path": csv_path.relative_to(staging).as_posix(), "count": len(changes)})
+            csv_path = history / f"changes-{index:06d}.csv{'.gz' if compressed else ''}"
+            csv_description = write_csv(csv_path, changes, compressed=compressed)
+            manifest["change_partitions"].append({"path": csv_path.relative_to(staging).as_posix(), "count": len(changes), **csv_description})
             budget(csv_path)
         summary = store.summary()
         if "historical_snapshot" in manifest:
             summary["historical_snapshot"] = manifest["historical_snapshot"]
+        if "album_snapshot" in manifest:
+            summary["album_snapshot"] = manifest["album_snapshot"]
         recent_runs = store.runs(limit=104)
         recent_changes = list(store.iter_changes(limit=1000))
         reviews = []

@@ -28,6 +28,12 @@
       <p id="historical-description"></p>
       <div><span id="historical-progress"></span><a id="historical-source" target="_blank" rel="noopener noreferrer" hidden>Dataset provenance</a></div>
     </section>
+    <section id="album-notice" class="historical-notice" aria-labelledby="album-title" hidden>
+      <span class="historical-badge">ALBUM SOURCE</span>
+      <h2 id="album-title"></h2>
+      <p id="album-description"></p>
+      <div><span id="album-progress"></span><a id="album-source" target="_blank" rel="noopener noreferrer" hidden>Album dataset provenance</a></div>
+    </section>
     <section class="stats" aria-label="Catalog status">
       <div><span class="stat-label">Catalog records</span><strong id="total-records">—</strong><small id="processed-label">No import verified</small></div>
       <div><span class="stat-label">Estimated coverage</span><strong id="coverage">Unknown</strong><small>Of discoverable source records</small></div>
@@ -45,7 +51,7 @@
       <aside class="filters" aria-label="Catalog filters">
         <div class="filter-heading"><h2>Refine results</h2><button type="button" id="reset" class="text-button">Reset</button></div>
         <form id="filters">
-          <label>Entity type<select name="entity_type"><option value="">All entities</option value="band">Bands</option><option value="release">Releases</option><option value="song">Songs</option><option value="label">Labels</option><option value="artist">Artists</option><option value="relationship">Relationships</option><option value="upcoming">Upcoming releases</option><option value="review">Review metadata</option></select></label>
+          <label>Entity type<select name="entity_type"><option value="">All entities</option><option value="band">Bands</option><option value="release">Albums / releases</option><option value="label">Labels</option><option value="artist">Artists</option><option value="relationship">Relationships</option><option value="upcoming">Upcoming releases</option><option value="review">Review metadata</option></select></label>
           <label>Name or stable ID<input name="name" placeholder="Name, title, or source ID" autocomplete="off"></label>
           <details open><summary>Genre &amp; classification</summary><div class="filter-section">
             <label>Primary genre<input name="primary_genre" placeholder="e.g. Death Metal" autocomplete="off"></label>
@@ -58,7 +64,6 @@
             <p class="field-help">Search names or stable IDs where linked metadata is available.</p>
             <label>Band<input name="band" placeholder="Band name or ID" autocomplete="off"></label>
             <label>Album / release<input name="release" placeholder="Release title or ID" autocomplete="off"></label>
-            <label>Song<input name="song" placeholder="Song title or ID" autocomplete="off"></label>
             <label>Label<input name="label" placeholder="Label name or ID" autocomplete="off"></label>
             <label>Artist<input name="artist" placeholder="Artist name or ID" autocomplete="off"></label>
           </div></details>
@@ -68,7 +73,7 @@
             <label>Band status<input name="status" placeholder="e.g. Active" autocomplete="off"></label>
             <div class="field-pair"><label>Formed from<input name="formed_from" type="number" min="0" max="9999" placeholder="Year"></label><label>Formed through<input name="formed_to" type="number" min="0" max="9999" placeholder="Year"></label></div>
           </div></details>
-          <details><summary>Release details</summary><div class="filter-section">
+          <details><summary>Album / release details</summary><div class="filter-section">
             <div class="field-pair"><label>Released from<input name="release_from" type="number" min="0" max="9999" placeholder="Year"></label><label>Released through<input name="release_to" type="number" min="0" max="9999" placeholder="Year"></label></div>
             <label>Release type<input name="release_type" placeholder="e.g. Full-length" autocomplete="off"></label>
             <label>Upcoming<select name="upcoming"><option value="">Any status</option><option value="yes">Upcoming</option><option value="no">Not upcoming</option></select></label>

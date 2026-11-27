@@ -52,6 +52,18 @@ class SyncTests(unittest.TestCase):
     def tearDown(self): self.store.close(); self.tmp.cleanup()
     def engine(self, api=None, website=None, **settings):
         return SyncEngine(self.store, api or FakeSource(), website or FakeSource(), {"sample_size": 0, "max_records": 5, **settings})
+    def test_albums_only_does_not_store_or_queue_song_children(self):
+        release={"entity_type":"release","entity_id":"77","name":"Synthetic album"}
+        song={"entity_type":"song","entity_id":"77:1","release_id":"77","name":"Synthetic track"}
+        engine=self.engine(include_songs=False)
+        run=self.store.start_run()
+        engine._accept(release,run,"website",True)
+        engine._accept(song,run,"website",True)
+        engine._accept({**song,"_discovery_only":True},run,"website",True)
+        engine.enqueue(song)
+        self.assertIsNotNone(self.store.get("release","77"))
+        self.assertIsNone(self.store.get("song","77:1"))
+        self.assertEqual(engine.pending(),0)
     def test_bounded_test_import_and_same_state_idempotent(self):
         source = FakeSource(pages=[[{**band(1), "_discovery_only": True}, {**band(2), "_discovery_only": True}]])
         e = self.engine(website=source)

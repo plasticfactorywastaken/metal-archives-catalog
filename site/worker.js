@@ -1,4 +1,5 @@
 import {matches, csvRow, CSV_FIELDS, csvCell, safeDataURL} from './query.mjs';
+import {readPartition} from './partition.mjs';
 
 let generation = 0;
 let activeFetch;
@@ -9,8 +10,8 @@ self.addEventListener('message', async ({data}) => {
   const controller = new AbortController();
   activeFetch = controller;
   const current = ++generation;
-  const {requestId, action, manifest, filters, baseURL, page = 1, pageSize = 50} = data;
-  const partitions = manifest.partitions.filter(part => !filters.entity_type || part.entity_type === filters.entity_type);
+  const {requestId, action, manifest, filters, baseURL, page = 1, pageSize = 50, excludedEntityTypes = []} = data;
+  const partitions = manifest.partitions.filter(part => !excludedEntityTypes.includes(part.entity_type) && (!filters.entity_type || part.entity_type === filters.entity_type));
   const offset = (page - 1) * pageSize;
   let total = 0, scanned = 0, failures = 0, exported = 0, previewCount = 0;
   let rows = [];
@@ -22,10 +23,11 @@ self.addEventListener('message', async ({data}) => {
       try {
         const response = await fetch(safeDataURL(part.path, baseURL), {signal:controller.signal});
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const payload = await response.json();
+        const payload = await readPartition(response, part, {signal:controller.signal});
         if (current !== generation) return;
         const records = Array.isArray(payload) ? payload : payload.records;
         if (!Array.isArray(records) || records.length > 2000) throw new Error('Invalid or oversized data partition.');
+        if (Number.isInteger(part.count) && records.length !== part.count) throw new Error('Data partition record count mismatch.');
         for (const record of records) {
           scanned++;
           if (!matches(record, filters)) continue;

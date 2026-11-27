@@ -59,6 +59,12 @@ def report_tables(store, row_limit=1000):
         ["Coverage interpretation", "Unknown until a reliable global source count exists"],
         ["Confidence interpretation", "Verified share of imported records; not global completeness"]]
     tables["Dashboard"] += [[key,scalar(value)] for key,value in summary.items() if not isinstance(value, (list,dict))]
+    tables["Dashboard"] += [["entity_count_" + key,value] for key,value in summary.get("entity_counts",{}).items()]
+    for checkpoint_name in ("historical_snapshot", "album_snapshot"):
+        snapshot = store.get_checkpoint(checkpoint_name, {})
+        if snapshot:
+            tables["Dashboard"] += [[checkpoint_name + "_" + field, scalar(snapshot.get(field))]
+                for field in ("provider","published_at","observation_date","complete","unverified")]
     tables["Dashboard"] += [[key,scalar(value)] for key,value in summary.get("weekly",{}).items()]
     tables["Dashboard"] += [[key,scalar(summary.get("latest_run",{}).get(key))] for key in ("run_id","finished_at","api_status","website_status","status","sheets_status","sheets_error")]
     return tables

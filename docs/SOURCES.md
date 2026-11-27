@@ -150,3 +150,26 @@ Original genres retain their order and raw text. Photo URLs are discarded;
 neither photos nor artwork are downloaded. Existing records and classification
 controls are preserved. A completed snapshot import is still a partial catalog
 with unknown global coverage and no promise of current weekly updates.
+
+## Albums-only public snapshot
+
+The public [fairygaze/music dataset](https://huggingface.co/datasets/fairygaze/music)
+has a separate `metal-archives` partition. Revision
+`06856d4d785dce8b029551bcca4839ee1e4d0ccc` contains ten Parquet files totaling
+195,778,779 bytes and a manifest reporting 4,510,074 source rows. The provider
+publication timestamp is August 24, 2026; observation dates and license are
+unspecified. These rows are not a unique album count or a current completeness
+denominator.
+
+The cloud worker reads only release ID, release URL, album title and parent
+artist identification columns. It never imports song rows. Album IDs must match
+the original Metal-Archives release URL, and duplicates collapse by release ID.
+File byte counts and SHA-256 digests are pinned. Progress commits with each
+bounded transaction; replay preserves existing records and manual overrides.
+All imported albums remain pending direct verification. Unknown dates, formats,
+release types and unresolved band identities stay unknown.
+
+The weekly workflow is enabled for Monday 09:17 UTC. It checks the permitted
+live sources using the existing request policy, preserves the last good data
+when blocked, and reports partial runs. The immutable snapshot itself does not
+create a live update feed.

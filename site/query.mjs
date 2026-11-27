@@ -44,6 +44,23 @@ export function historicalSnapshotNotice(metadata) {
   };
 }
 
+export function albumSnapshotNotice(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const published = new Date(metadata.published_at || '');
+  const publication = Number.isNaN(published.valueOf()) ? 'unknown' : published.toISOString().slice(0, 10);
+  let sourceURL = '';
+  try {
+    const parsed = new URL(metadata.dataset_url);
+    if (parsed.protocol === 'https:' && parsed.hostname === 'huggingface.co' && parsed.pathname.startsWith('/datasets/')) sourceURL = parsed.href;
+  } catch { /* source metadata may lack a usable public link */ }
+  return {
+    title: `Albums / releases · source published ${publication}`,
+    description: `Album metadata from ${scalar(metadata.provider) || 'a third-party dataset'}. Publication is not the Metal-Archives observation date. Records await direct verification; release year, type, and other fields may be unknown.`,
+    progress: metadata.complete === true ? 'Album snapshot import finished. Current catalog coverage remains unknown.' : 'Album import is in progress. Imported releases are searchable now.',
+    sourceURL,
+  };
+}
+
 export function isUpcoming(record) {
   return record.is_upcoming === true || record.is_upcoming === 1 || record.is_upcoming === '1' || record.is_upcoming === 'true';
 }
@@ -111,7 +128,7 @@ export function matches(record, filters = {}) {
   return true;
 }
 
-export const CSV_FIELDS = ['entity_type', 'entity_id', 'name', 'band_name', 'release_title', 'primary_genre',
+export const CSV_FIELDS = ['entity_type', 'entity_id', 'name', 'band_id', 'band_name', 'release_title', 'release_year', 'release_type', 'primary_genre',
   'genres_raw', 'genres_json', 'secondary_genres', 'facet_primary_genre', 'facet_genres_json', 'genre_origin', 'genre_source_url',
   'ecommerce_primary_class', 'facet_ecommerce_primary_class', 'country', 'location', 'label_name', 'release_date',
   'last_checked', 'verification_status', 'classification_status', 'source_url'];

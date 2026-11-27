@@ -1,5 +1,7 @@
 import csv
+import gzip
 import hashlib
+import io
 import json
 import tempfile
 import unittest
@@ -7,6 +9,19 @@ from pathlib import Path
 
 from catalog_mirror.export import csv_cell, export_catalog
 from catalog_mirror.store import Store
+
+
+def decoded_bytes(path):
+    data = path.read_bytes()
+    return gzip.decompress(data) if path.suffix == ".gz" else data
+
+
+def json_records(path):
+    return json.loads(decoded_bytes(path).decode("utf-8"))
+
+
+def csv_records(path):
+    return list(csv.DictReader(io.StringIO(decoded_bytes(path).decode("utf-8-sig"), newline="")))
 
 
 class ExportTests(unittest.TestCase):
@@ -39,9 +54,14 @@ class ExportTests(unittest.TestCase):
         for partition in manifest["partitions"]:
             path = target / partition["path"]
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), partition["sha256"])
-            recovered += json.loads(path.read_text(encoding="utf-8"))
-            with (target / partition["csv_path"]).open(encoding="utf-8-sig", newline="") as stream:
-                self.assertEqual(len(list(csv.DictReader(stream))), partition["count"])
+            recovered += json_records(path)
+            self.assertEqual(len(csv_records(target / partition["csv_path"])), partition["count"])
+            for prefix, asset_path in (("", path), ("csv_", target / partition["csv_path"])):
+                self.assertEqual(partition[prefix + "encoding"], "gzip")
+                self.assertEqual(partition[prefix + "bytes"], asset_path.stat().st_size)
+                self.assertEqual(partition[prefix + "uncompressed_bytes"], len(decoded_bytes(asset_path)))
+                self.assertEqual(partition[prefix + "sha256"], hashlib.sha256(asset_path.read_bytes()).hexdigest())
+                self.assertEqual(partition[prefix + "uncompressed_sha256"], hashlib.sha256(decoded_bytes(asset_path)).hexdigest())
         self.assertEqual(len(recovered), 7)
         self.assertEqual(recovered[0]["genres_json"], ["Doom", "Black", "Doom"])
         with Store(target / "catalog.sqlite") as copy:
@@ -70,8 +90,9 @@ class ExportTests(unittest.TestCase):
         self.store.upsert({"entity_type": "band", "entity_id": "1", "name": "=Synthetic"}, self.run, verified=True)
         target = self.root / "public"
         manifest = export_catalog(self.store, target)
-        data = json.loads((target / manifest["partitions"][0]["path"]).read_text())
+        data = json_records(target / manifest["partitions"][0]["path"])
         self.assertEqual(data[0]["name"], "=Synthetic")
+        self.assertEqual(csv_records(target / manifest["partitions"][0]["csv_path"])[0]["name"], "'=Synthetic")
 
     def test_cross_entity_name_enrichment(self):
         self.store.upsert({"entity_type": "band", "entity_id": "1", "name": "Synthetic Band"}, self.run, verified=True)
@@ -83,7 +104,68 @@ class ExportTests(unittest.TestCase):
         manifest = export_catalog(self.store, target)
         return {(row["entity_type"], row["entity_id"]): row
                 for part in manifest["partitions"]
-                for row in json.loads((target / part["path"]).read_text(encoding="utf-8"))}
+                for row in json_records(target / part["path"])}
+
+    def test_gzip_exports_keep_all_change_history_and_plain_status_files(self):
+        self.store.upsert({"entity_type": "band", "entity_id": "1", "name": "Synthetic", "genres_raw": "Doom/Black"}, self.run, verified=True)
+        self.store.upsert({"entity_type": "band", "entity_id": "1", "genres_raw": "Black/Doom"}, self.run, verified=True)
+        self.store.upsert({"entity_type": "release", "entity_id": "2", "name": "Synthetic release", "band_id": "1"}, self.run, verified=True)
+        target = self.root / "public"
+        manifest = export_catalog(self.store, target, partition_size=2)
+        self.assertEqual(manifest["version"], 2)
+        recovered = []
+        for part in manifest["change_partitions"]:
+            path = target / part["path"]
+            self.assertTrue(path.name.endswith(".csv.gz"))
+            self.assertEqual(part["encoding"], "gzip")
+            self.assertEqual(part["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+            recovered.extend(csv_records(path))
+        source_history = list(self.store.iter_changes())
+        self.assertEqual(len(recovered), len(source_history))
+        self.assertEqual({int(row["change_id"]) for row in recovered}, {row["change_id"] for row in source_history})
+        self.assertEqual(sum(part["count"] for part in manifest["change_partitions"]), manifest["changes_total"])
+        for name in ("manifest.json", "summary.json", "runs.json", "changes.json", "reviews.json"):
+            json.loads((target / name).read_text(encoding="utf-8"))
+        self.assertFalse(list(target.glob("**/part-*.json")))
+        self.assertFalse(list(target.glob("**/part-*.csv")))
+
+    def test_gzip_partition_bytes_are_deterministic(self):
+        self.store.upsert({"entity_type": "band", "entity_id": "1", "name": "Synthetic", "genres_raw": "Doom/Doom"}, self.run, verified=True)
+        target = self.root / "public"
+        first = export_catalog(self.store, target)
+        first_files = {str(path.relative_to(target)): path.read_bytes() for path in target.glob("**/*.gz")}
+        second = export_catalog(self.store, target)
+        self.assertEqual(first["partitions"], second["partitions"])
+        self.assertEqual(first["change_partitions"], second["change_partitions"])
+        self.assertEqual(first_files, {str(path.relative_to(target)): path.read_bytes() for path in target.glob("**/*.gz")})
+
+    def test_plain_export_remains_available_and_preserves_same_values(self):
+        self.store.upsert({"entity_type": "band", "entity_id": "1", "name": "Synthetic", "genres_raw": "Doom/Black/Doom"}, self.run, verified=True)
+        zipped_root, plain_root = self.root / "zipped", self.root / "plain"
+        zipped = export_catalog(self.store, zipped_root)
+        plain = export_catalog(self.store, plain_root, compressed=False)
+        self.assertEqual(plain["version"], 1)
+        self.assertEqual(plain["export_compression"], "identity")
+        zipped_part, plain_part = zipped["partitions"][0], plain["partitions"][0]
+        self.assertTrue(plain_part["path"].endswith(".json"))
+        self.assertTrue(plain_part["csv_path"].endswith(".csv"))
+        self.assertEqual(plain_part["encoding"], "identity")
+        self.assertEqual(plain_part["sha256"], plain_part["uncompressed_sha256"])
+        self.assertEqual(decoded_bytes(zipped_root / zipped_part["path"]), decoded_bytes(plain_root / plain_part["path"]))
+        self.assertEqual(decoded_bytes(zipped_root / zipped_part["csv_path"]), decoded_bytes(plain_root / plain_part["csv_path"]))
+
+    def test_storage_budget_counts_compressed_files_not_expanded_json(self):
+        self.store.upsert({"entity_type": "band", "entity_id": "1", "name": "Synthetic", "notes": "Synthetic repeated metadata. " * 3000}, self.run, verified=True)
+        target = self.root / "public"
+        compressed = export_catalog(self.store, target)
+        compressed_size = sum(path.stat().st_size for path in target.rglob("*") if path.is_file())
+        budget = compressed_size + 2000
+        export_catalog(self.store, target, max_bytes=budget)
+        before = (target / "manifest.json").read_bytes()
+        with self.assertRaises(ValueError):
+            export_catalog(self.store, target, max_bytes=budget, compressed=False)
+        self.assertEqual((target / "manifest.json").read_bytes(), before)
+        self.assertLess(compressed["partitions"][0]["bytes"], compressed["partitions"][0]["uncompressed_bytes"])
 
     def seed_genre_parents(self):
         self.store.upsert({"entity_type":"band", "entity_id":"1", "name":"Synthetic Band", "genres_raw":"Death/Black/Death", "country":"Finland", "status":"Active", "formed_in":1992, "source_url":"https://www.metal-archives.com/bands/1"}, self.run, verified=True)
@@ -177,6 +259,28 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(record["label_name"], "Synthetic Catalog Label")
         self.assertEqual(record["facet_label_name"], "Synthetic Catalog Label")
         self.assertEqual(record["facet_label_id"], "44")
+
+    def test_album_and_band_snapshot_notices_are_separate_compact_and_persistent(self):
+        bands = {"provider": "Kaggle", "dataset_url": "https://www.kaggle.com/datasets/example/test", "version": 3, "published_at": "2024-11-09", "snapshot_label": "November 2024", "complete": True, "unverified": True, "live": False}
+        albums = {"provider": "Hugging Face", "dataset": "fairygaze/music", "dataset_url": "https://huggingface.co/datasets/fairygaze/music", "revision": "06856d4d785dce8b029551bcca4839ee1e4d0ccc", "published_at": "2026-08-24", "observation_date": None, "license": "unknown", "complete": False, "unverified": True, "live": False, "files": [{"internal_progress": 123}], "unrelated": "Do not publish"}
+        self.store.set_checkpoint("historical_snapshot", bands)
+        self.store.set_checkpoint("album_snapshot", albums)
+        target = self.root / "public"
+        first = export_catalog(self.store, target)
+        self.assertEqual(first["historical_snapshot"]["published_at"], "2024-11-09")
+        self.assertEqual(first["album_snapshot"]["published_at"], "2026-08-24")
+        self.assertEqual(first["album_snapshot"]["revision"], albums["revision"])
+        self.assertIsNone(first["album_snapshot"]["observation_date"])
+        self.assertFalse(first["album_snapshot"]["publication_is_observation_date"])
+        self.assertNotIn("files", first["album_snapshot"])
+        self.assertNotIn("unrelated", first["album_snapshot"])
+        later = self.store.start_run("batch")
+        self.store.finish_run(later, status="partial", website_status="blocked")
+        second = export_catalog(self.store, target)
+        self.assertEqual(first["album_snapshot"], second["album_snapshot"])
+        summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["album_snapshot"], second["album_snapshot"])
+        self.assertEqual(summary["historical_snapshot"], second["historical_snapshot"])
 
 
 if __name__ == "__main__":

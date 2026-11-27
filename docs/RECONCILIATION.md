@@ -15,8 +15,8 @@ The cloud historical import and publication succeeded. This is a usable historic
 | Snapshot published | November 9, 2024; exact observation dates unknown |
 | Direct live verification | **0%** |
 | Current global coverage | **Unknown** |
-| Unimported scopes | Releases, songs, artists, relationships, upcoming releases and reviews |
-| Weekly sync | **Inactive**; SYNC_ENABLED not enabled |
+| Unimported scopes | Albums cloud import pending; songs excluded by user request; artists, relationships, upcoming releases and reviews unavailable |
+| Weekly sync | **Enabled**; SYNC_ENABLED=true; Monday 09:17 UTC; source availability still limits updates |
 | Sheets | Native panel connected; metadata updated; unattended worker credential missing and entity report tabs empty |
 | Public site | About **802 MB**, within the 900 MB safety guard |
 | Paid services or billing | None enabled |

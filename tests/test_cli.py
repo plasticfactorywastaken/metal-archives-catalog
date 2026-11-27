@@ -11,6 +11,18 @@ from catalog_mirror.store import Store
 
 
 class CLITests(unittest.TestCase):
+    def test_sheets_only_failure_is_observable_and_never_requests_sources(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); config=root/'settings.json'
+            config.write_text(json.dumps({'database':str(root/'catalog.sqlite'),
+                'export_directory':str(root/'data'),'sheet_id':'test-sheet'}))
+            with patch('catalog_mirror.cli.Transport') as transport, patch.dict('os.environ',
+                    {'GOOGLE_SERVICE_ACCOUNT_JSON':'','GOOGLE_SHEET_ID':''}), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['--config',str(config),'sync-sheets']),1)
+                transport.assert_not_called()
+            with Store(root/'catalog.sqlite') as store:
+                self.assertEqual(store.runs(1)[0]['sheets_status'],'failed')
+
     def test_init_export_and_summary_without_source_requests(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)

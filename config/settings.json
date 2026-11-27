@@ -18,5 +18,6 @@
   "api_search_terms": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"],
   "seed_records": [],
   "sheet_id": "1tmIM8FK0fBjg9TR2yQHRsZkciEs7nE8L8qab9T4OUGw",
-  "minimum_absence_runs": 3
+  "minimum_absence_runs": 3,
+  "include_songs": false
 }

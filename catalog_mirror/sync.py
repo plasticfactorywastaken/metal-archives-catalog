@@ -27,6 +27,8 @@ class SyncEngine:
         if record.get("_parse_error"):
             raise ValueError(str(record["_parse_error"]))
         if record.get("entity_type") == "song":
+            if not self.settings.get("include_songs", True):
+                return
             # Songs have no independent verification page; their release does.
             if record.get("release_id"):
                 record = {"entity_type": "release", "entity_id": str(record["release_id"])}
@@ -236,6 +238,8 @@ class SyncEngine:
         return {"run_id":run_id, "processed":processed, **metrics}
 
     def _accept(self, record, run_id, source, verified):
+        if record.get("entity_type") == "song" and not self.settings.get("include_songs", True):
+            return
         if record.get("_discovery_only"):
             self.enqueue(record, "related", 20)
             return

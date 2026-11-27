@@ -1,0 +1,62 @@
+name: Refresh Google Sheets reports
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+  pages: write
+  id-token: write
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SHEET_ID: ${{ vars.GOOGLE_SHEET_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deterministic worker
+        run: python -m pip install '.[sheets]'
+      - name: Verify code before touching persisted state
+        run: |
+          python -m unittest discover -s tests -v
+          node --test tests/frontend.test.mjs
+      - name: Restore last published state
+        id: restore
+        run: python scripts/cloud_state.py restore
+      - name: Read manual controls and refresh Sheets reports
+        id: import
+        run: python -m catalog_mirror sync-sheets
+      - name: Persist completed batches even if export failed
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          if [ -f state/catalog.sqlite ]; then
+            python scripts/cloud_state.py publish
+          fi
+      - name: Verify Pages size budget
+        if: steps.import.outcome == 'success'
+        run: python scripts/check_site_size.py
+      - uses: actions/configure-pages@v5
+        if: steps.import.outcome == 'success'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.import.outcome == 'success'
+        with:
+          path: site
+          retention-days: 1
+      - name: Wait for uploaded artifact visibility
+        if: steps.import.outcome == 'success'
+        run: python scripts/wait_pages_artifact.py
+      - uses: actions/deploy-pages@v4
+        id: deployment
+        if: steps.import.outcome == 'success'

@@ -11,6 +11,7 @@ dependencies = []
 
 [project.optional-dependencies]
 sheets = ["google-auth>=2.36,<3", "requests>=2.32,<3"]
+albums = ["pyarrow>=18,<23"]
 
 [project.scripts]
 catalog-mirror = "catalog_mirror.cli:main"

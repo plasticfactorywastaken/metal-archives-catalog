@@ -14,6 +14,7 @@ from .sources import ApiSource, WebsiteSource
 from .transport import Transport
 from .sync import SyncEngine
 from .snapshot import SnapshotImporter
+from .albums import AlbumSnapshotImporter
 from .sheets import SheetsClient, apply_controls, controls_settings, report_tables, HEADERS, TAB_ORDER
 
 
@@ -34,6 +35,13 @@ def main(argv=None):
     bootstrap.add_argument("--limit", type=int, help="Maximum CSV rows inspected, including duplicates and skipped rows")
     bootstrap.add_argument("--seconds", type=int, default=7200)
     bootstrap.add_argument("--skip-sheets", action="store_true")
+    albums = sub.add_parser("bootstrap-albums", help="Import albums only from the pinned public release-ID snapshot")
+    albums.add_argument("--mode", choices=("test","batch","full"), default="full")
+    albums.add_argument("--limit", type=int, help="Maximum projected source rows inspected, including duplicates")
+    albums.add_argument("--seconds", type=int, default=7200)
+    albums.add_argument("--skip-sheets", action="store_true")
+    sheets_sync = sub.add_parser("sync-sheets", help="Read private controls and refresh reports without requesting catalog sources")
+    sheets_sync.add_argument("--skip-sheets", action="store_true")
     export = sub.add_parser("export")
     export.add_argument("--output")
     sub.add_parser("sheet-template")
@@ -70,7 +78,7 @@ def main(argv=None):
             manifest = export_catalog(store, args.output or settings["export_directory"])
             print(json.dumps({"status":"exported","records":store.summary()["total_records"]}))
             return 0
-        if args.command != "bootstrap-snapshot":
+        if args.command not in {"bootstrap-snapshot", "bootstrap-albums", "sync-sheets"}:
             transport = Transport(cache_dir=settings.get("cache_directory"),
                 min_interval=settings.get("request_interval_seconds",8), user_agent=settings["user_agent"],
                 timeout=settings.get("request_timeout_seconds",25), max_retries=settings.get("max_retries",2))
@@ -94,6 +102,13 @@ def main(argv=None):
                 sheets = None
         if args.command == "bootstrap-snapshot":
             result = SnapshotImporter(store).run(args.mode,args.limit,args.seconds)
+        elif args.command == "bootstrap-albums":
+            result = AlbumSnapshotImporter(store).run(args.mode,args.limit,args.seconds)
+        elif args.command == "sync-sheets":
+            run_id = store.start_run("sheets_only")
+            store.finish_run(run_id, status="success", api_status="not_checked", website_status="not_checked")
+            result = {"run_id":run_id,"processed":0,"records_remaining":None,"estimated_coverage":None,
+                      "estimated_confidence":store.summary()["verification_ratio"]}
         else:
             result = SyncEngine(store,api,website,settings).run(args.mode,args.limit,args.seconds)
         if not settings["sheet_id"] or args.skip_sheets:
@@ -110,7 +125,7 @@ def main(argv=None):
         print(json.dumps({"run_id":result["run_id"],"status":store.runs(1)[0]["status"],"processed":result["processed"],
                           "remaining_known":result["records_remaining"],"estimated_coverage":result["estimated_coverage"],
                           "estimated_confidence":result["estimated_confidence"]}))
-        return 0
+        return 1 if args.command == "sync-sheets" and store.runs(1)[0].get("sheets_status") != "connected" else 0
 
 
 if __name__ == "__main__":

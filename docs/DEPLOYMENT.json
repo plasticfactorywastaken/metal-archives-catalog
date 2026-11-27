@@ -11,7 +11,10 @@
   "invalid_input_rows_skipped": 529,
   "direct_verification_ratio": 0,
   "current_global_coverage": null,
-  "weekly_sync_active": false,
+  "weekly_sync_active": true,
+  "weekly_schedule_utc": "Monday 09:17",
+  "songs_enabled": false,
+  "album_import_status": "implementation_validated_cloud_run_pending",
   "unattended_sheets_connected": false,
   "site_bytes_at_import": 801898512
 }

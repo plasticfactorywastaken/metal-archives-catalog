@@ -1,4 +1,4 @@
-import {scalar, genres, primaryGenre, classificationValue, needsClassification, safeDataURL, historicalSnapshotNotice} from './query.mjs';
+import {scalar, genres, primaryGenre, classificationValue, needsClassification, safeDataURL, historicalSnapshotNotice, albumSnapshotNotice} from './query.mjs';
 
 const $ = id => document.getElementById(id);
 const baseURL = new URL('./data/', document.baseURI).href;
@@ -77,11 +77,12 @@ function renderRows(records) {
     const row = document.createElement('tr');
     const name = document.createElement('td');
     name.append(sourceLink(record.source_url || record.ma_url, record.name || record.title || 'Untitled record', 'record-title'));
-    name.append(textElement('span', record.entity_type, 'entity-tag'));
-    name.append(textElement('span', `ID ${record.entity_id}`, 'record-meta'));
+    name.append(textElement('span', record.entity_type === 'release' ? 'album / release' : record.entity_type, 'entity-tag'));
+    name.append(textElement('span', `${record.entity_type === 'release' ? 'Release ID' : 'ID'} ${record.entity_id}`, 'record-meta'));
     const bandName = record.band_name || record.facet_band_name || record.band;
     const releaseTitle = record.release_title || record.facet_release_title;
     if (bandName && record.entity_type !== 'band') name.append(textElement('span', bandName, 'record-meta'));
+    else if (record.band_id || record.facet_band_id) name.append(textElement('span', `Band ID ${record.band_id || record.facet_band_id}`, 'record-meta'));
     if (releaseTitle && record.entity_type === 'song') name.append(textElement('span', releaseTitle, 'record-meta'));
     const genre = document.createElement('td');
     const ordered = genres(record);
@@ -96,6 +97,7 @@ function renderRows(records) {
     details.append(textElement('span', place || '—'));
     if (record.label_name || record.facet_label_name) details.append(textElement('span', record.label_name || record.facet_label_name, 'secondary-text'));
     if (record.release_date || record.expected_release_date) details.append(textElement('span', record.release_date || record.expected_release_date, 'secondary-text'));
+    else if (record.release_year) details.append(textElement('span', `Year ${record.release_year}`, 'secondary-text'));
     if (record.release_type) details.append(textElement('span', record.release_type, 'secondary-text'));
     const verification = document.createElement('td');
     verification.append(textElement('span', scalar(record.verification_status).replaceAll('_', ' ') || 'Unverified', 'verification'));
@@ -130,7 +132,7 @@ function startSearch({resetPage = true, action = 'search'} = {}) {
   // Recreate the worker to cancel an in-flight network request promptly.
   worker.terminate();
   worker = createWorker();
-  worker.postMessage({requestId:id, action, manifest, filters, baseURL, page, pageSize:Number($('page-size').value)});
+  worker.postMessage({requestId:id, action, manifest, filters, baseURL, page, pageSize:Number($('page-size').value), excludedEntityTypes:['song']});
 }
 
 function createWorker() {
@@ -244,15 +246,19 @@ function renderSummary() {
 }
 
 function renderHistoricalNotice() {
-  const notice = historicalSnapshotNotice(manifest.historical_snapshot || summary.historical_snapshot);
-  if (!notice) return;
-  $('historical-notice').hidden = false;
-  $('historical-title').textContent = notice.title;
-  $('historical-description').textContent = notice.description;
-  $('historical-progress').textContent = notice.progress;
-  if (notice.sourceURL) {
-    $('historical-source').href = notice.sourceURL;
-    $('historical-source').hidden = false;
+  for (const [prefix, notice] of [
+    ['historical', historicalSnapshotNotice(manifest.historical_snapshot || summary.historical_snapshot)],
+    ['album', albumSnapshotNotice(manifest.album_snapshot || summary.album_snapshot)],
+  ]) {
+    if (!notice) continue;
+    $(`${prefix}-notice`).hidden = false;
+    $(`${prefix}-title`).textContent = notice.title;
+    $(`${prefix}-description`).textContent = notice.description;
+    $(`${prefix}-progress`).textContent = notice.progress;
+    if (notice.sourceURL) {
+      $(`${prefix}-source`).href = notice.sourceURL;
+      $(`${prefix}-source`).hidden = false;
+    }
   }
 }
 

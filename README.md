@@ -2,7 +2,7 @@
 
 A deterministic Python worker, SQLite catalog, partitioned JSON/CSV exports, Google Sheets control panel, and static GitHub Pages search application. Routine jobs use no LLM and require no running personal computer.
 
-**Live application:** [Open the catalog](https://plasticfactorywastaken.github.io/metal-archives-catalog/). The historical bootstrap is complete: **182,542 unique bands and 13,538 unique labels** are searchable. These are unverified records from a snapshot published November 9, 2024. Global current coverage is unknown; direct verification is 0%. The live API and Metal-Archives access remain unavailable, weekly synchronization is inactive, and unattended Google Sheets reporting still needs its worker credential. See [RECONCILIATION.md](docs/RECONCILIATION.md) for validation and limitations.
+**Live application:** [Open the catalog](https://plasticfactorywastaken.github.io/metal-archives-catalog/). The historical band/label bootstrap is complete: **182,542 unique bands and 13,538 unique labels** are searchable. Albums have a separate resumable cloud import. Songs are excluded from new imports and the app. Global current coverage is unknown; direct verification is pending. Weekly synchronization is enabled for Monday 09:17 UTC; current updates depend on permitted source availability. Unattended Google Sheets reporting still needs its worker credential. See [RECONCILIATION.md](docs/RECONCILIATION.md) for measured counts and limitations.
 
 To retry publication after a hosting failure, run **Publish saved catalog**. It restores the existing checksummed snapshot and rebuilds the site without importing or querying catalog sources. Publication waits for the uploaded Pages artifact to become visible before deployment.
 
@@ -12,7 +12,13 @@ After creating the public repository and enabling Pages with GitHub Actions, run
 
 After checking that run and the Pages link, repeat with mode `full`, limit `250000`, and `allow_initial_import=false`. Repeat if the checkpoint is unfinished. The importer preserves committed progress, deduplicates stable IDs, and skips every existing entity so historical values cannot overwrite newer records or manual controls. It imports bands and labels only. The provider reports about 194,000 bands, but the actual imported count is measured by the worker.
 
-Filter these records by name, country, band status, ordered genres and label. Data is prominently labeled as a historical snapshot published November 9, 2024; direct verification is pending and last-checked dates remain empty. Releases, songs, artists, upcoming releases and live weekly changes still require a working permitted source. Source freshness and global completeness are not established by finishing this bootstrap.
+Filter these records by name, country, band status, ordered genres and label. Band/label data is labeled as a historical snapshot published November 9, 2024; direct verification is pending and last-checked dates remain empty. Source freshness and global completeness are not established by finishing a snapshot import.
+
+For albums, run **Import albums**, first with mode `test` and limit `25`, then mode `full` and limit `4600000`, with initial import disabled. The worker projects only album/artist metadata from the pinned Hugging Face Metal-Archives partition, deduplicates real release IDs, and resumes committed progress. Missing album dates/types stay unknown. This source has an August 24, 2026 publication timestamp, unknown observation date, and no declared license. It does not import songs. Both snapshot origins remain visible in the app.
+
+JSON, complete CSV and change-history partitions use gzip to stay within free Pages storage. Browser search decompresses and verifies one partition at a time. Downloaded `.csv.gz` files must be decompressed before opening as CSV. The 900 MB publication guard remains active.
+
+After the dedicated Google Sheets credential is configured, **Refresh Google Sheets reports** reads manual controls and refreshes reports without contacting catalog sources. Its job fails visibly if Sheets access fails. The weekly job performs the same control/report sync automatically.
 
 Source: [Every Metal Archives Band November 2024, version 3](https://www.kaggle.com/datasets/guimacrlh/every-metal-archives-band-october-2024). The provider labels the dataset Apache 2.0. Image URLs are discarded and no image files are fetched. See [source notes](docs/SOURCES.md) for pinned endpoints and limitations.
 
