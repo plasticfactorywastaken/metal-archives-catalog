@@ -16,6 +16,7 @@ on:
         default: false
 permissions:
   contents: write
+  actions: read
   pages: write
   id-token: write
 concurrency:
@@ -75,6 +76,9 @@ jobs:
         with:
           path: site
           retention-days: 1
+      - name: Wait for uploaded artifact visibility
+        if: steps.import.outcome == 'success'
+        run: python scripts/wait_pages_artifact.py
       - uses: actions/deploy-pages@v4
         id: deployment
         if: steps.import.outcome == 'success'
